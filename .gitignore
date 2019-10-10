@@ -1,0 +1,5 @@
+data/
+venv/
+resources/
+*.pt
+*/__pycache__/*
