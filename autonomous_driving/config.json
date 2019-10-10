@@ -17,13 +17,13 @@
             "csv_name": "train_sample3.csv",
             "batch_size": 2,
             "shuffle": true,
-            "num_workers": 2
+            "num_workers": 1
         },
         "validation": {
             "csv_name": "val_sample3.csv",
             "batch_size": 2,
             "shuffle": true,
-            "num_workers": 2
+            "num_workers": 1
         },
         "test": {
             "csv_name": "test_sample3.csv",

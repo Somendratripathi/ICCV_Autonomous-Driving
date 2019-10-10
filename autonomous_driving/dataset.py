@@ -74,6 +74,12 @@ class Drive360(object):
                                             'canSteering': np.float32
                                             })
 
+        # Make a new frameIndex column to uniquely identify a row by (chapter, frameIndex)
+        self.dataframe["frameIndex"] = self.dataframe.apply(
+            lambda row: int(os.path.basename(row.cameraFront).split(".")[0][3:]),
+            axis=1
+        )
+
         # Here we calculate the temporal offset for the starting indices of each chapter. As we cannot cross chapter
         # boundaries but would still like to obtain a temporal sequence of images, we cannot start at index 0 of each chapter
         # but rather at some index i such that the i-max_temporal_history = 0
@@ -122,7 +128,7 @@ class Drive360(object):
             # must write a custom function here.
 
             self.indices = self.dataframe.groupby('chapter').apply(
-                lambda x: x.iloc[100:]).index.droplevel(
+                lambda x: x[x["frameIndex"]>100]).index.droplevel(
                 level=0).tolist()
             if 'canSteering' not in self.dataframe.columns:
                 self.dataframe['canSteering'] = [0.0 for _ in range(len(self.dataframe))]
@@ -177,11 +183,19 @@ class Drive360(object):
         self.imageFront_transform = front_transforms[phase]
         self.imageSides_transform = sides_transforms[phase]
 
+    def __len__(self):
+        return len(self.indices)
+
     def __getitem__(self, index):
         inputs = {}
         labels = {}
-        end = index - self.sequence_length
-        skip = int(-1 * self.history_frequency)
+        id = {}
+        # end = index - self.sequence_length
+        # skip = int(-1 * self.history_frequency)
+
+        # For sample files, the sequences are already skipped
+        end = index - self.history_number
+        skip = -1
         rows = self.dataframe.iloc[index:end:skip].reset_index(drop=True, inplace=False)
 
         if self.front:
@@ -197,4 +211,14 @@ class Drive360(object):
         labels['canSteering'] = self.dataframe['canSteering'].iloc[index]
         labels['canSpeed'] = self.dataframe['canSpeed'].iloc[index]
 
-        return inputs, labels
+        id["chapter"] = self.dataframe["chapter"].iloc[index]
+        id["frameIndex"] = self.dataframe["frameIndex"].iloc[index]
+
+        return inputs, labels, id
+
+
+if __name__ == "__main__":
+    import json
+    config = json.load(open("./config.json"))
+    td = Drive360(config, "test")
+    print(len(td))

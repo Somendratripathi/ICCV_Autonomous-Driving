@@ -8,6 +8,7 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from autonomous_driving.dataset import Drive360Loader
+from autonomous_driving.utils import add_results
 
 
 class SomeDrivingModel(nn.Module):
@@ -82,20 +83,6 @@ class SomeDrivingModel(nn.Module):
         return prediction
 
 
-def add_results(results, output):
-    steering = np.squeeze(output['canSteering'].cpu().data.numpy())
-    speed = np.squeeze(output['canSpeed'].cpu().data.numpy())
-    if normalize_targets:
-        steering = (steering * target_std['canSteering']) + target_mean['canSteering']
-        speed = (speed * target_std['canSpeed']) + target_mean['canSpeed']
-    if np.isscalar(steering):
-        steering = [steering]
-    if np.isscalar(speed):
-        speed = [speed]
-    results['canSteering'].extend(steering)
-    results['canSpeed'].extend(speed)
-
-
 if __name__ == "__main__":
     config = json.load(open('./config.json'))
 
@@ -121,7 +108,7 @@ if __name__ == "__main__":
         model.train()
         running_loss_speed = 0.0
         running_loss_angle = 0.0
-        for batch_idx, (data, target) in enumerate(train_loader):
+        for batch_idx, (data, target, _) in enumerate(train_loader):
             optimizer.zero_grad()
             prediction = model(data)
 
@@ -141,7 +128,7 @@ if __name__ == "__main__":
                 running_loss_speed = 0.0
                 running_loss_angle = 0.0
 
-            if batch_idx >= 20:
+            if batch_idx >= 5:
                 break
 
         val_pred_speed = np.array((2,))
@@ -150,14 +137,14 @@ if __name__ == "__main__":
         val_target_angle = np.array((2,))
         model.eval()
         with torch.no_grad():
-            for batch_idx, (data, target) in enumerate(validation_loader):
+            for batch_idx, (data, target, _) in enumerate(validation_loader):
                 outputs = model(data)
                 val_pred_speed = np.concatenate((val_pred_speed, outputs["canSpeed"].cpu().detach().numpy()), axis=0)
                 val_target_speed = np.concatenate((val_target_speed, target["canSpeed"].cpu().detach().numpy()), axis=0)
                 val_pred_angle = np.concatenate((val_pred_angle, outputs["canSteering"].cpu().detach().numpy()), axis=0)
                 val_target_angle = np.concatenate((val_target_angle, target["canSteering"].cpu().detach().numpy()), axis=0)
 
-                if batch_idx >= 20:
+                if batch_idx >= 5:
                     break
 
         val_speed_mse = ((val_target_speed - val_pred_speed) ** 2).mean()
@@ -174,40 +161,3 @@ if __name__ == "__main__":
             best_angle_mse = val_angle_mse
             best_angle_model_wts = model.state_dict()
             torch.save(model, "first_model_angle.pt")
-
-    print("-"*10)
-    print("Training Complete")
-
-    model.eval()
-    with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(validation_loader):
-            prediction = model(data)
-            mse = (np.square(prediction['canSpeed'] -
-                             target['canSpeed'])).mean()
-            print(mse)
-            if batch_idx >= 5:
-                break
-
-    # Creating a submission file.
-    normalize_targets = config['target']['normalize']
-    target_mean = config['target']['mean']
-    target_std = config['target']['std']
-
-    file = './submission.csv'
-    results = {
-        "chapter": [],
-        "frameIndex": [],
-        "canSteering": [],
-        "canSpeed": [],
-    }
-
-    with torch.no_grad():
-        for batch_idx, (data, target) in enumerate(tqdm(test_loader)):
-            prediction = model(data)
-            add_results(results, prediction)
-            # Used to terminate early, remove.
-             if batch_idx >= 5:
-                 break
-
-    df = pd.DataFrame.from_dict(results)
-    df.to_csv(file, index=False)

@@ -3,3 +3,4 @@ venv/
 resources/
 *.pt
 */__pycache__/*
+*.csv
