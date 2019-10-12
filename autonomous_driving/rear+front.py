@@ -7,6 +7,7 @@ import pandas as pd
 import torch.optim as optim
 from tqdm import tqdm
 import os
+import pickle
 from dataset import Drive360Loader
 from utils import add_results
 
@@ -112,7 +113,7 @@ if __name__ == "__main__":
         for batch_idx, (data, target, _) in enumerate(train_loader):
             optimizer.zero_grad()
             prediction = model(data)
-
+            print(prediction['canSpeed'].cpu(), target['canSpeed'])
             loss_speed = criterion(prediction['canSpeed'].cpu(), target['canSpeed'])
             running_loss_speed += loss_speed.item()
 
@@ -133,7 +134,9 @@ if __name__ == "__main__":
 
             #if batch_idx >= 64:
             #    break
-
+        pickle.dump(train_speed_loss_progression, open( "speed_loss.p", "wb" ))
+        pickle.dump(train_angle_loss_progression, open( "angle_loss.p", "wb" ))
+        
         val_pred_speed = np.array((2,))
         val_target_speed = np.array((2,))
         val_pred_angle = np.array((2,))

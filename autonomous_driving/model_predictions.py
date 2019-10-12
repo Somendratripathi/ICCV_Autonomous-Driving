@@ -6,15 +6,22 @@ import os
 from time import time
 
 
-from autonomous_driving.dataset import Drive360Loader
-from autonomous_driving.config import *
-from autonomous_driving.utils import add_results
-from autonomous_driving.basic import SomeDrivingModel
+#from autonomous_driving.dataset import Drive360Loader
+#from autonomous_driving.config import *
+#from autonomous_driving.utils import add_results
+#from autonomous_driving.basic import SomeDrivingModel
+
+
+from dataset import Drive360Loader
+from config import *
+from utils import add_results
+from basic import SomeDrivingModel
+
 
 if __name__ == "__main__":
     config = json.load(open(CONFIG_FILE))
     test_loader = Drive360Loader(config, "test")
-    model = torch.load(TRAINED_MODELS_DIR + "sample3-3e-angle.pt")
+    model = torch.load(TRAINED_MODELS_DIR + "first_model_speed.pt")
 
     # Creating a submission file.
     normalize_targets = config['target']['normalize']
@@ -30,11 +37,13 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         for batch_idx, (data, target, ids) in enumerate(tqdm(test_loader)):
+            #if batch_idx <= 3476:
+            #    continue
+
             prediction = model(data)
             add_results(results, prediction, ids, normalize_targets, target_mean, target_std)
             # # Used to terminate early, remove.
-            # if batch_idx >= 5:
-            #     break
+            
 
     # Assuming sampled_predictions_file only has columns ["chapter", "frameIndex", "canSteering", "canSpeed"]
     # Also frame index is integer
@@ -51,6 +60,7 @@ if __name__ == "__main__":
     # Join test_full with sampled_predictions => left join
     print("merging test_full and sampled_predictions")
     since = time()
+
     tm = pd.merge(test_full, sampled_predictions, how="left", left_on=["chapter", "frameIndex"],
                   right_on=["chapter", "frameIndex"])
     print("merged in ", time() - since, "\n")

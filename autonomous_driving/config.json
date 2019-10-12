@@ -12,7 +12,7 @@
             "number": 2,
             "frequency": 4
         },
-        "data_dir": "/home/resl/Dev/iccv_autonomous_driving/data/Sample3/",
+        "data_dir": "./autonomous_driving/data/Sample3/",
         "train":{
             "csv_name": "train_sample3.csv",
             "batch_size": 2,
