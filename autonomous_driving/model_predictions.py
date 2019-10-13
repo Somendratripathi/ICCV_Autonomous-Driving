@@ -39,6 +39,9 @@ if __name__ == "__main__":
     # Assuming sampled_predictions_file only has columns ["chapter", "frameIndex", "canSteering", "canSpeed"]
     # Also frame index is integer
     sampled_predictions = pd.DataFrame.from_dict(results)
+    sampled_predictions.chapter = pd.to_numeric(sampled_predictions.chapter)
+    sampled_predictions.frameIndex = pd.to_numeric(sampled_predictions.frameIndex)
+
     test_full = pd.read_csv(DATA_DIR + "test_full.csv", usecols=["chapter", "cameraFront"])
 
     # # Create an frame number column in both sampled_predictions and test_full

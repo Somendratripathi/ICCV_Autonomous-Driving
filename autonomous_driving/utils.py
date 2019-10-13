@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def add_results(results, output, ids, normalize_targets, target_std, target_mean):
+def add_results(results, output, ids, normalize_targets, target_mean, target_std):
     chapter = np.squeeze(ids["chapter"].cpu().data.numpy())
     frame_index = np.squeeze(ids["frameIndex"].cpu().data.numpy())
     steering = np.squeeze(output['canSteering'].cpu().data.numpy())
@@ -10,13 +10,13 @@ def add_results(results, output, ids, normalize_targets, target_std, target_mean
         steering = (steering * target_std['canSteering']) + target_mean['canSteering']
         speed = (speed * target_std['canSpeed']) + target_mean['canSpeed']
 
-    if np.isscalar(chapter):
+    if np.ndim(chapter) == 0:
         chapter = [chapter]
-    if np.isscalar(frame_index):
+    if np.ndim(frame_index) == 0:
         frame_index = [frame_index]
-    if np.isscalar(steering):
+    if np.ndim(steering) == 0:
         steering = [steering]
-    if np.isscalar(speed):
+    if np.ndim(speed) == 0:
         speed = [speed]
 
     results["chapter"].extend(chapter)
