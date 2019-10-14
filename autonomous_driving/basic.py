@@ -8,15 +8,19 @@ import torch.optim as optim
 from tqdm import tqdm
 
 from autonomous_driving.dataset import Drive360Loader
-from autonomous_driving.utils import add_results
+from autonomous_driving.utils import add_results, get_device
+from autonomous_driving.config import *
 
 
 class SomeDrivingModel(nn.Module):
     """
     A very basic resnet and lstm based architecture
     """
-    def __init__(self):
+
+    def __init__(self, device=get_device()):
         super(SomeDrivingModel, self).__init__()
+
+        self.device = device
         final_concat_size = 0
 
         # Main CNN
@@ -77,23 +81,21 @@ class SomeDrivingModel(nn.Module):
         x_cat = torch.cat(module_outputs, dim=-1)
 
         # Feed concatenated outputs into the 
-        # regession networks.
+        # regression networks.
         prediction = {'canSteering': torch.squeeze(self.control_angle(x_cat)),
                       'canSpeed': torch.squeeze(self.control_speed(x_cat))}
         return prediction
 
 
-if __name__ == "__main__":
-    config = json.load(open('./config.json'))
+def main():
+    config = json.load(open(CONFIG_FILE))
+    device = get_device()
 
     train_loader = Drive360Loader(config, 'train')
     validation_loader = Drive360Loader(config, 'validation')
-    test_loader = Drive360Loader(config, 'test')
-
-    print('Loaded train loader with the following data available as a dict.')
-    print(train_loader.drive360.dataframe.keys())
 
     model = SomeDrivingModel()
+    model = model.to(device)
 
     criterion = nn.SmoothL1Loss()
     optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
@@ -109,6 +111,14 @@ if __name__ == "__main__":
         running_loss_speed = 0.0
         running_loss_angle = 0.0
         for batch_idx, (data, target, _) in enumerate(train_loader):
+            # transfer stuff to GPU
+            for camera_key in data.keys():
+                for batch_num_key in data[camera_key].keys():
+                    data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
+            target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
+            target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+
+            # get predictions
             optimizer.zero_grad()
             prediction = model(data)
 
@@ -138,11 +148,21 @@ if __name__ == "__main__":
         model.eval()
         with torch.no_grad():
             for batch_idx, (data, target, _) in enumerate(validation_loader):
+                # transfer stuff to GPU
+                for camera_key in data.keys():
+                    for batch_num_key in data[camera_key].keys():
+                        data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
+                target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
+                target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+
+                # get predictions
                 outputs = model(data)
+
+                # store predictions for calculating mse for entire epoch
                 val_pred_speed = np.concatenate((val_pred_speed, outputs["canSpeed"].cpu().detach().numpy()), axis=0)
                 val_target_speed = np.concatenate((val_target_speed, target["canSpeed"].cpu().detach().numpy()), axis=0)
                 val_pred_angle = np.concatenate((val_pred_angle, outputs["canSteering"].cpu().detach().numpy()), axis=0)
-                val_target_angle = np.concatenate((val_target_angle, target["canSteering"].cpu().detach().numpy()), axis=0)
+                val_target_angle = np.concatenate((val_target_angle, target["canSteering"].cpu().detach().numpy()),
 
                 if batch_idx >= 5:
                     break
@@ -155,9 +175,13 @@ if __name__ == "__main__":
         if best_speed_mse > val_speed_mse:
             best_speed_mse = val_speed_mse
             best_speed_model_wts = model.state_dict()
-            torch.save(model, "first_model_speed.pt")
+            torch.save(model, TRAINED_MODELS_DIR + "temp.pt")
 
         if best_angle_mse > val_angle_mse:
             best_angle_mse = val_angle_mse
             best_angle_model_wts = model.state_dict()
-            torch.save(model, "first_model_angle.pt")
+            torch.save(model, TRAINED_MODELS_DIR + "temp.pt")
+
+
+if __name__ == "__main__":
+    main()

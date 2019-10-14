@@ -49,7 +49,6 @@ class Drive360(object):
         self.csv_name = config['data_loader'][phase]['csv_name']
         self.shuffle = config['data_loader'][phase]['shuffle']
         self.history_number = config['data_loader']['historic']['number']
-        self.history_frequency = config['data_loader']['historic']['frequency']
         self.normalize_targets = config['target']['normalize']
         self.target_mean = {}
         target_mean = config['target']['mean']
@@ -98,9 +97,7 @@ class Drive360(object):
         # Thus the fifth sample will consist of images:     [-****]
         # Thus the sixth sample will consist of images:     [*****]
 
-        self.sequence_length = self.history_number * self.history_frequency
-        max_temporal_history = self.sequence_length
-        self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[max_temporal_history:]).index.droplevel(
+        self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[self.history_number:]).index.droplevel(
             level=0).tolist()
 
         #### phase specific manipulation #####
@@ -128,7 +125,7 @@ class Drive360(object):
             # must write a custom function here.
 
             self.indices = self.dataframe.groupby('chapter').apply(
-                lambda x: x[x["frameIndex"]>100]).index.droplevel(
+                lambda x: x[x["frameIndex"] > 100]).index.droplevel(
                 level=0).tolist()
             if 'canSteering' not in self.dataframe.columns:
                 self.dataframe['canSteering'] = [0.0 for _ in range(len(self.dataframe))]
