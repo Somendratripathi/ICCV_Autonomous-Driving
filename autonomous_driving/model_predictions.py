@@ -15,13 +15,14 @@ from time import time
 from dataset import Drive360Loader
 from config import *
 from utils import add_results
-from basic import SomeDrivingModel
+from basic_new import SomeDrivingModel
+
 
 
 if __name__ == "__main__":
     config = json.load(open(CONFIG_FILE))
     test_loader = Drive360Loader(config, "test")
-    model = torch.load(TRAINED_MODELS_DIR + "first_model_speed.pt")
+    model = torch.load(TRAINED_MODELS_DIR + "basic++.pt")
 
     # Creating a submission file.
     normalize_targets = config['target']['normalize']
@@ -37,17 +38,18 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         for batch_idx, (data, target, ids) in enumerate(tqdm(test_loader)):
-            #if batch_idx <= 3476:
-            #    continue
-
             prediction = model(data)
             add_results(results, prediction, ids, normalize_targets, target_mean, target_std)
             # # Used to terminate early, remove.
-            
+            # if batch_idx >= 5:
+            #     break
 
     # Assuming sampled_predictions_file only has columns ["chapter", "frameIndex", "canSteering", "canSpeed"]
     # Also frame index is integer
     sampled_predictions = pd.DataFrame.from_dict(results)
+    sampled_predictions.chapter = pd.to_numeric(sampled_predictions.chapter)
+    sampled_predictions.frameIndex = pd.to_numeric(sampled_predictions.frameIndex)
+
     test_full = pd.read_csv(DATA_DIR + "test_full.csv", usecols=["chapter", "cameraFront"])
 
     # # Create an frame number column in both sampled_predictions and test_full
@@ -60,7 +62,6 @@ if __name__ == "__main__":
     # Join test_full with sampled_predictions => left join
     print("merging test_full and sampled_predictions")
     since = time()
-
     tm = pd.merge(test_full, sampled_predictions, how="left", left_on=["chapter", "frameIndex"],
                   right_on=["chapter", "frameIndex"])
     print("merged in ", time() - since, "\n")

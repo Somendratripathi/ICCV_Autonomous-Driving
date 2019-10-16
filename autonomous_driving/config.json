@@ -4,13 +4,13 @@
     },
     "front": true,
     "multi_camera": {
-        "right_left": false,
-        "rear": false
+        "right_left": true,
+        "rear": true
     },
     "data_loader": {
         "historic":{
-            "number": 2,
-            "frequency": 4
+            "number": 4,
+            "frequency": 1
         },
         "data_dir": "./autonomous_driving/data/Sample3/",
         "train":{

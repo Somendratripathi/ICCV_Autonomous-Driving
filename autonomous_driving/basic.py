@@ -96,7 +96,7 @@ if __name__ == "__main__":
     model = SomeDrivingModel()
     model.cuda()
 
-    criterion = nn.SmoothL1Loss()
+    criterion = nn.MSELoss()
     optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
     num_epochs = 1
 
@@ -119,7 +119,7 @@ if __name__ == "__main__":
             loss_angle = criterion(prediction['canSteering'].cpu(), target['canSteering'])
             running_loss_angle += loss_angle.item()
 
-            loss = loss_speed + loss_angle
+            loss = loss_speed ##+ loss_angle
             loss.backward()
             optimizer.step()
 

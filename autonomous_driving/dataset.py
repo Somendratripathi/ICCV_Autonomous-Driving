@@ -10,7 +10,6 @@ from torch.utils.data import Sampler
 
 class SubsetSampler(Sampler):
     r"""Samples elements sequentially from a given list of indices, without replacement.
-
     Arguments:
         indices (sequence): a sequence of indices
     """
@@ -98,10 +97,12 @@ class Drive360(object):
         # Thus the fifth sample will consist of images:     [-****]
         # Thus the sixth sample will consist of images:     [*****]
 
-        self.sequence_length = self.history_number * self.history_frequency
-        max_temporal_history = self.sequence_length
-        self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[max_temporal_history:]).index.droplevel(
-            level=0).tolist()
+        #self.sequence_length = self.history_number * self.history_frequency
+        #max_temporal_history = self.sequence_length
+        #self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[max_temporal_history:]).index.droplevel(
+        #    level=0).tolist()
+        self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[self.history_number:]).index.droplevel(level=0).tolist()
+        
 
         #### phase specific manipulation #####
         if phase == 'train':
@@ -126,9 +127,17 @@ class Drive360(object):
             # this is to allow challenge participants to experiment with different temporal settings of data input.
             # If challenge participants have a greater temporal length than 10s for each training sample, then they
             # must write a custom function here.
-
+            if config['data_loader']["test"]["csv_name"] == "test_sample3.csv":
+                freq = 40
+            elif config['data_loader']["test"]["csv_name"] == "test_sample2.csv":
+                freq = 20
+            elif config['data_loader']["test"]["csv_name"] == "test_sample1.csv":
+                freq = 10
+            else:
+                freq = 1
+            #print(freq * config["data_loader"]["historic"]["number"])
             self.indices = self.dataframe.groupby('chapter').apply(
-                lambda x: x[x["frameIndex"]>100]).index.droplevel(
+                lambda x: x[x["frameIndex"]>max(100, freq * config["data_loader"]["historic"]["number"])]).index.droplevel(
                 level=0).tolist()
             if 'canSteering' not in self.dataframe.columns:
                 self.dataframe['canSteering'] = [0.0 for _ in range(len(self.dataframe))]
@@ -200,14 +209,29 @@ class Drive360(object):
 
         if self.front:
             inputs['cameraFront'] = {}
+
             for row_idx, (_, row) in enumerate(rows.iterrows()):
-                inputs['cameraFront'][row_idx] = (
-                    self.imageFront_transform(Image.open(self.data_dir + row['cameraFront'])))
+                inputs['cameraFront'][row_idx] = (self.imageFront_transform(Image.open(self.data_dir + row['cameraFront'])))
+        
         if self.right_left:
-            inputs['cameraRight'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRight'].iloc[0]))
-            inputs['cameraLeft'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraLeft'].iloc[0]))
+            inputs['cameraRight'],inputs['cameraLeft'] = {}, {}
+            
+            for row_idx, (_, row) in enumerate(rows.iterrows()):
+                inputs['cameraRight'][row_idx] = (self.imageFront_transform(Image.open(self.data_dir + row['cameraRight'])))
+            for row_idx, (_, row) in enumerate(rows.iterrows()):
+                inputs['cameraLeft'][row_idx] = (self.imageFront_transform(Image.open(self.data_dir + row['cameraLeft'])))
+
+            #inputs['cameraRight'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRight'].iloc[0]))
+            #inputs['cameraLeft'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraLeft'].iloc[0]))
+        
         if self.rear:
-            inputs['cameraRear'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRear'].iloc[0]))
+            inputs['cameraRear'] = {}
+            for row_idx, (_, row) in enumerate(rows.iterrows()):
+                inputs['cameraRear'][row_idx] = (self.imageFront_transform(Image.open(self.data_dir + row['cameraRear'])))
+            #inputs['cameraRear'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRear'].iloc[0]))
+        
+        
+        
         labels['canSteering'] = self.dataframe['canSteering'].iloc[index]
         labels['canSpeed'] = self.dataframe['canSpeed'].iloc[index]
 

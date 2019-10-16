@@ -21,76 +21,20 @@ class SomeDrivingModel(nn.Module):
         super(SomeDrivingModel, self).__init__()
         final_concat_size = 0
 
-        ####################################### Front 
         # Main CNN
-        cnn1 = models.resnet34(pretrained=True)
-        self.features = nn.Sequential(*list(cnn1.children())[:-1])
-        self.intermediate1 = nn.Sequential(nn.Linear(
-            cnn1.fc.in_features, 128),
+        cnn = models.resnet34(pretrained=True)
+        self.features = nn.Sequential(*list(cnn.children())[:-1])
+        self.intermediate = nn.Sequential(nn.Linear(
+            cnn.fc.in_features, 128),
             nn.ReLU())
         final_concat_size += 128
 
-
         # Main LSTM
-        self.lstm1 = nn.LSTM(input_size=128,
+        self.lstm = nn.LSTM(input_size=128,
                             hidden_size=64,
-                            num_layers=2,
+                            num_layers=3,
                             batch_first=False)
         final_concat_size += 64
-
-        ####################################### Rear 
-        # Main CNN
-        cnn2 = models.resnet34(pretrained=True)
-        self.features = nn.Sequential(*list(cnn2.children())[:-1])
-        self.intermediate2 = nn.Sequential(nn.Linear(
-            cnn2.fc.in_features, 128),
-            nn.ReLU())
-        final_concat_size += 128
-
-
-        # Main LSTM
-        self.lstm2 = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=2,
-                            batch_first=False)
-        final_concat_size += 64
-
-
-        ######################################## Left 
-        # Main CNN
-        cnn3 = models.resnet34(pretrained=True)
-        self.features = nn.Sequential(*list(cnn3.children())[:-1])
-        self.intermediate3 = nn.Sequential(nn.Linear(
-            cnn3.fc.in_features, 128),
-            nn.ReLU())
-        final_concat_size += 128
-
-
-        # Main LSTM
-        self.lstm3 = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=2,
-                            batch_first=False)
-        final_concat_size += 64
-
-
-        ######################################### Right 
-        # Main CNN
-        cnn4 = models.resnet34(pretrained=True)
-        self.features = nn.Sequential(*list(cnn4.children())[:-1])
-        self.intermediate4 = nn.Sequential(nn.Linear(cnn4.fc.in_features, 128),nn.ReLU())
-        final_concat_size += 128
-
-
-        # Main LSTM
-        self.lstm4 = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=2,
-                            batch_first=False)
-        final_concat_size += 64
-
-
-
 
         # Angle Regressor
         self.control_angle = nn.Sequential(
@@ -111,34 +55,14 @@ class SomeDrivingModel(nn.Module):
 
     def forward(self, data):
         module_outputs = []
-        
+        lstm_i = []
         # Loop through temporal sequence of
         # front facing camera images and pass 
         # through the cnn.
-
-        lstm_i = []
-        # for each ******* CNN1
         for k, v in data['cameraFront'].items():
             x = self.features(v.cuda())
             x = x.view(x.size(0), -1)
-            x = self.intermediate1(x)
-            lstm_i.append(x)
-            # feed the current front facing camera
-            # output directly into the 
-            # regression networks.
-            if k == 0:
-                module_outputs.append(x)
-                
-        # Feed temporal outputs of CNN1 into LSTM
-        i_lstm, _ = self.lstm1(torch.stack(lstm_i))
-        module_outputs.append(i_lstm[-1])
-
-        lstm_i = []
-        # for each ******* CNN2
-        for k, v in data['cameraRear'].items():
-            x = self.features(v.cuda())
-            x = x.view(x.size(0), -1)
-            x = self.intermediate2(x)
+            x = self.intermediate(x)
             lstm_i.append(x)
             # feed the current front facing camera
             # output directly into the 
@@ -146,45 +70,10 @@ class SomeDrivingModel(nn.Module):
             if k == 0:
                 module_outputs.append(x)
         
-        # Feed temporal outputs of CNN1 into LSTM
-        i_lstm, _ = self.lstm2(torch.stack(lstm_i))
+        # Feed temporal outputs of CNN into LSTM
+        i_lstm, _ = self.lstm(torch.stack(lstm_i))
         module_outputs.append(i_lstm[-1])
 
-
-        lstm_i = []
-        # for each ******* CNN3
-        for k, v in data['cameraLeft'].items():
-            x = self.features(v.cuda())
-            x = x.view(x.size(0), -1)
-            x = self.intermediate3(x)
-            lstm_i.append(x)
-            # feed the current front facing camera
-            # output directly into the 
-            # regression networks.
-            if k == 0:
-                module_outputs.append(x)
-
-        # Feed temporal outputs of CNN1 into LSTM
-        i_lstm, _ = self.lstm3(torch.stack(lstm_i))
-        module_outputs.append(i_lstm[-1])
-
-        lstm_i = []
-        # for each ******* CNN4
-        for k, v in data['cameraRight'].items():
-            x = self.features(v.cuda())
-            x = x.view(x.size(0), -1)
-            x = self.intermediate4(x)
-            lstm_i.append(x)
-            # feed the current front facing camera
-            # output directly into the 
-            # regression networks.
-            if k == 0:
-                module_outputs.append(x)
-    
-      # Feed temporal outputs of CNN1 into LSTM
-        i_lstm, _ = self.lstm4(torch.stack(lstm_i))
-        module_outputs.append(i_lstm[-1])
-        
         # Concatenate current image CNN output 
         # and LSTM output.
         x_cat = torch.cat(module_outputs, dim=-1)
@@ -285,7 +174,7 @@ if __name__ == "__main__":
             #print val batch MSE
             print('Epoch: ' + str(epoch+1) + '/' + str(epochs) + '\n Val Speed MSE: {0} \n Val Angle MSE: {1}'.format(str(round(val_speed_mse,3)),str(round(val_angle_mse,3))))
 
-        torch.save(model, "all_cam.pt")
+        torch.save(model, "basic++.pt")
         return (hist_train_loss_s, hist_train_loss_a, hist_val_acc_s, hist_val_acc_a)
 
 
@@ -299,5 +188,5 @@ if __name__ == "__main__":
     
     
     #model output
-    pickle.dump(run1,open("model_otp_all_cam","wb"))
+    pickle.dump(run1,open("model_otp","wb"))
 
