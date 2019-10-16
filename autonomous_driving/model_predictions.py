@@ -40,9 +40,9 @@ if __name__ == "__main__":
         for batch_idx, (data, target, ids) in enumerate(tqdm(test_loader)):
             prediction = model(data)
             add_results(results, prediction, ids, normalize_targets, target_mean, target_std)
-            # # Used to terminate early, remove.
-            # if batch_idx >= 5:
-            #     break
+            # Used to terminate early, remove.
+            #if batch_idx >= 50:
+            #    break
 
     # Assuming sampled_predictions_file only has columns ["chapter", "frameIndex", "canSteering", "canSpeed"]
     # Also frame index is integer
@@ -71,6 +71,13 @@ if __name__ == "__main__":
 
     print("interpolating values")
     since = time()
+
+
+    #tm.head(n=5000).to_csv('tm.csv', index = False)
+    #print(tm.head()) 
+    tm = tm.groupby('chapter').apply(lambda s : s.interpolate(method='from_derivatives', limit_direction = "both",limit_area = "inside")).interpolate('linear', limit_direction = "both")
+    #s.interpolate(method='from_derivatives', limit_direction = "both",limit_area = "inside")
+    '''
     # find first index from top where
     steering_ind = list(tm.columns).index("canSteering")
     speed_ind = list(tm.columns).index("canSpeed")
@@ -85,7 +92,7 @@ if __name__ == "__main__":
     tm.iloc[start:, speed_ind] = tm.iloc[start - 1, speed_ind]
 
     print("interpolated in ", time() - since, "\n")
-
+    '''
     print("filtering >100 rows")
     since = time()
     tm = tm.loc[tm.frameIndex > 100]
