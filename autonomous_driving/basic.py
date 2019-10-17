@@ -163,6 +163,7 @@ def main():
                 val_target_speed = np.concatenate((val_target_speed, target["canSpeed"].cpu().detach().numpy()), axis=0)
                 val_pred_angle = np.concatenate((val_pred_angle, outputs["canSteering"].cpu().detach().numpy()), axis=0)
                 val_target_angle = np.concatenate((val_target_angle, target["canSteering"].cpu().detach().numpy()),
+                                                  axis=0)
 
                 if batch_idx >= 5:
                     break

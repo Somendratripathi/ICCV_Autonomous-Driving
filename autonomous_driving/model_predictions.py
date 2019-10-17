@@ -5,16 +5,17 @@ import pandas as pd
 import os
 from time import time
 
-
 from autonomous_driving.dataset import Drive360Loader
+from autonomous_driving.utils import add_results, get_device
 from autonomous_driving.config import *
-from autonomous_driving.utils import add_results
 from autonomous_driving.basic import SomeDrivingModel
 
 if __name__ == "__main__":
     config = json.load(open(CONFIG_FILE))
+    device = get_device()
     test_loader = Drive360Loader(config, "test")
-    model = torch.load(TRAINED_MODELS_DIR + "sample3-3e-angle.pt")
+    model = torch.load(TRAINED_MODELS_DIR + "basic_20e_angle.pt")
+    model = model.to(device)
 
     # Creating a submission file.
     normalize_targets = config['target']['normalize']
@@ -30,9 +31,16 @@ if __name__ == "__main__":
 
     with torch.no_grad():
         for batch_idx, (data, target, ids) in enumerate(tqdm(test_loader)):
+            # transfer stuff to GPU
+            for camera_key in data.keys():
+                for batch_num_key in data[camera_key].keys():
+                    data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
+            target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
+            target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+
             prediction = model(data)
             add_results(results, prediction, ids, normalize_targets, target_mean, target_std)
-            # # Used to terminate early, remove.
+            # Used to terminate early, remove.
             # if batch_idx >= 5:
             #     break
 
@@ -47,7 +55,8 @@ if __name__ == "__main__":
     # # Create an frame number column in both sampled_predictions and test_full
     print("creating frameIndex on test_full")
     since = time()
-    test_full["frameIndex"] = test_full.apply(lambda row: int(os.path.basename(row.cameraFront).split(".")[0][3:]), axis=1)
+    test_full["frameIndex"] = test_full.apply(lambda row: int(os.path.basename(row.cameraFront).split(".")[0][3:]),
+                                              axis=1)
     test_full = test_full[["chapter", "frameIndex"]]
     print("done in ", time() - since, "\n")
 
@@ -63,19 +72,9 @@ if __name__ == "__main__":
 
     print("interpolating values")
     since = time()
-    # find first index from top where
-    steering_ind = list(tm.columns).index("canSteering")
-    speed_ind = list(tm.columns).index("canSpeed")
-    start = 0
-    for i in range(len(tm)):
-        if pd.isnull(tm.iloc[i, steering_ind]):
-            continue
-        tm.iloc[start:i, steering_ind] = tm.iloc[i, steering_ind]
-        tm.iloc[start:i, speed_ind] = tm.iloc[i, speed_ind]
-        start = i + 1
-    tm.iloc[start:, steering_ind] = tm.iloc[start - 1, steering_ind]
-    tm.iloc[start:, speed_ind] = tm.iloc[start - 1, speed_ind]
-
+    tm = tm.groupby('chapter').apply(
+        lambda s: s.interpolate(method='from_derivatives').interpolate('linear', limit_direction="both")
+    )
     print("interpolated in ", time() - since, "\n")
 
     print("filtering >100 rows")
@@ -83,4 +82,5 @@ if __name__ == "__main__":
     tm = tm.loc[tm.frameIndex > 100]
     print("filtered in ", time() - since, "\n")
 
-    tm[["canSteering", "canSpeed"]].to_csv(SUBMISSIONS_DIR + "submission_full.csv")
+    tm.canSpeed = tm.canSpeed.clip(lower=0)
+    tm[["canSteering", "canSpeed"]].to_csv(SUBMISSIONS_DIR + "submission_full_interpolate.csv")
