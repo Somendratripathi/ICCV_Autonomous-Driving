@@ -3,6 +3,7 @@ from PIL import Image
 import pandas as pd
 import numpy as np
 from random import shuffle
+import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.utils.data import Sampler
@@ -38,6 +39,15 @@ class Drive360Loader(DataLoader):
                          sampler=sampler,
                          num_workers=num_workers
                          )
+
+    @staticmethod
+    def load_batch_to_device(data, target, device):
+        for camera_key in data.keys():
+            for batch_num_key in data[camera_key].keys():
+                data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
+        target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
+        target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+        return data, target
 
 
 class Drive360(object):
@@ -145,6 +155,7 @@ class Drive360(object):
 
         front_transforms = {
             'train': transforms.Compose([
+                transforms.ColorJitter(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=config['image']['norm']['mean'],
                                      std=config['image']['norm']['std'])

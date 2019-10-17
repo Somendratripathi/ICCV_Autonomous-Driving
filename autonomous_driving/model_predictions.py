@@ -14,7 +14,7 @@ if __name__ == "__main__":
     config = json.load(open(CONFIG_FILE))
     device = get_device()
     test_loader = Drive360Loader(config, "test")
-    model = torch.load(TRAINED_MODELS_DIR + "basic_20e_angle.pt")
+    model = torch.load(TRAINED_MODELS_DIR + "1571333078.746423_angle.pt")
     model = model.to(device)
 
     # Creating a submission file.
@@ -32,11 +32,7 @@ if __name__ == "__main__":
     with torch.no_grad():
         for batch_idx, (data, target, ids) in enumerate(tqdm(test_loader)):
             # transfer stuff to GPU
-            for camera_key in data.keys():
-                for batch_num_key in data[camera_key].keys():
-                    data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
-            target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
-            target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+            data, target = test_loader.load_batch_to_device(data, target, device)
 
             prediction = model(data)
             add_results(results, prediction, ids, normalize_targets, target_mean, target_std)

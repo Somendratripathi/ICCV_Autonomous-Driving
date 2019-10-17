@@ -5,183 +5,192 @@ import torch.nn as nn
 import torch
 import pandas as pd
 import torch.optim as optim
-from tqdm import tqdm
+from datetime import datetime
+import os
 
 from autonomous_driving.dataset import Drive360Loader
 from autonomous_driving.utils import add_results, get_device
 from autonomous_driving.config import *
-
-
-class SomeDrivingModel(nn.Module):
-    """
-    A very basic resnet and lstm based architecture
-    """
-
-    def __init__(self, device=get_device()):
-        super(SomeDrivingModel, self).__init__()
-
-        self.device = device
-        final_concat_size = 0
-
-        # Main CNN
-        cnn = models.resnet34(pretrained=True)
-        self.features = nn.Sequential(*list(cnn.children())[:-1])
-        self.intermediate = nn.Sequential(nn.Linear(
-            cnn.fc.in_features, 128),
-            nn.ReLU())
-        final_concat_size += 128
-
-        # Main LSTM
-        self.lstm = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=3,
-                            batch_first=False)
-        final_concat_size += 64
-
-        # Angle Regressor
-        self.control_angle = nn.Sequential(
-            nn.Linear(final_concat_size, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)
-        )
-        # Speed Regressor
-        self.control_speed = nn.Sequential(
-            nn.Linear(final_concat_size, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)
-        )
-
-    def forward(self, data):
-        module_outputs = []
-        lstm_i = []
-        # Loop through temporal sequence of
-        # front facing camera images and pass 
-        # through the cnn.
-        for k, v in data['cameraFront'].items():
-            x = self.features(v)
-            x = x.view(x.size(0), -1)
-            x = self.intermediate(x)
-            lstm_i.append(x)
-            # feed the current front facing camera
-            # output directly into the 
-            # regression networks.
-            if k == 0:
-                module_outputs.append(x)
-
-        # Feed temporal outputs of CNN into LSTM
-        i_lstm, _ = self.lstm(torch.stack(lstm_i))
-        module_outputs.append(i_lstm[-1])
-
-        # Concatenate current image CNN output 
-        # and LSTM output.
-        x_cat = torch.cat(module_outputs, dim=-1)
-
-        # Feed concatenated outputs into the 
-        # regression networks.
-        prediction = {'canSteering': torch.squeeze(self.control_angle(x_cat)),
-                      'canSpeed': torch.squeeze(self.control_speed(x_cat))}
-        return prediction
+from autonomous_driving.models.BasicDrivingModel import *
 
 
 def main():
     config = json.load(open(CONFIG_FILE))
     device = get_device()
+    model_name = str(datetime.timestamp(datetime.now()))
 
     train_loader = Drive360Loader(config, 'train')
     validation_loader = Drive360Loader(config, 'validation')
 
-    model = SomeDrivingModel()
+    model = BasicDrivingModel()
     model = model.to(device)
 
     criterion = nn.SmoothL1Loss()
-    optimizer = optim.SGD(model.parameters(), lr=0.0001, momentum=0.9)
-    num_epochs = 1
+    optimizer = optim.Adam(model.parameters())
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10)
+    num_epochs = 20 if not DEBUG else DEBUG_EPOCHS
 
-    best_speed_model_wts = model.state_dict()
+    normalize_targets = config['target']['normalize']
+    target_mean = config['target']['mean']
+    target_std = config['target']['std']
+
     best_speed_mse = float("inf")
-    best_angle_model_wts = model.state_dict()
     best_angle_mse = float("inf")
-
+    val_speed_mse_epochs = np.empty((0,))
+    val_angle_mse_epochs = np.empty((0,))
     for epoch in range(num_epochs):
+        if scheduler is not None:
+            scheduler.step(epoch)
+
+        ###############
+        # TRAIN EPOCH
+        ###############
         model.train()
-        running_loss_speed = 0.0
-        running_loss_angle = 0.0
         for batch_idx, (data, target, _) in enumerate(train_loader):
-            # transfer stuff to GPU
-            for camera_key in data.keys():
-                for batch_num_key in data[camera_key].keys():
-                    data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
-            target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
-            target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
+            # transfer stuff to device
+            data, target = train_loader.load_batch_to_device(data, target, device)
 
             # get predictions
             optimizer.zero_grad()
             prediction = model(data)
 
-            loss_speed = criterion(prediction['canSpeed'], target['canSpeed'])
-            running_loss_speed += loss_speed.item()
-
             loss_angle = criterion(prediction['canSteering'], target['canSteering'])
-            running_loss_angle += loss_angle.item()
-
-            loss = loss_speed + loss_angle
+            loss_speed = criterion(prediction['canSpeed'], target['canSpeed'])
+            loss = loss_angle + loss_speed
             loss.backward()
             optimizer.step()
 
-            if batch_idx % 2 == 1:
-                print('[Epoch: %d, batch:  %5d] loss speed: %.5f loss angle: %.5f' %
-                      (epoch + 1, batch_idx + 1, running_loss_speed / 2.0, running_loss_angle / 2.0))
-                running_loss_speed = 0.0
-                running_loss_angle = 0.0
-
-            if batch_idx >= 5:
+            if DEBUG and batch_idx >= DEBUG_BATCHES:
                 break
 
-        val_pred_speed = np.array((2,))
-        val_target_speed = np.array((2,))
-        val_pred_angle = np.array((2,))
-        val_target_angle = np.array((2,))
+        #################
+        # EVALUATE EPOCH
+        #################
         model.eval()
+        val_pred_speed = np.empty((0,))
+        val_target_speed = np.empty((0,))
+        val_pred_angle = np.empty((0,))
+        val_target_angle = np.empty((0,))
         with torch.no_grad():
             for batch_idx, (data, target, _) in enumerate(validation_loader):
                 # transfer stuff to GPU
-                for camera_key in data.keys():
-                    for batch_num_key in data[camera_key].keys():
-                        data[camera_key][batch_num_key] = data[camera_key][batch_num_key].to(device, dtype=torch.float)
-                target["canSteering"] = target["canSteering"].to(device, dtype=torch.float)
-                target["canSpeed"] = target["canSpeed"].to(device, dtype=torch.float)
-
+                data, target = validation_loader.load_batch_to_device(data, target, device)
                 # get predictions
                 outputs = model(data)
 
-                # store predictions for calculating mse for entire epoch
-                val_pred_speed = np.concatenate((val_pred_speed, outputs["canSpeed"].cpu().detach().numpy()), axis=0)
-                val_target_speed = np.concatenate((val_target_speed, target["canSpeed"].cpu().detach().numpy()), axis=0)
-                val_pred_angle = np.concatenate((val_pred_angle, outputs["canSteering"].cpu().detach().numpy()), axis=0)
-                val_target_angle = np.concatenate((val_target_angle, target["canSteering"].cpu().detach().numpy()),
-                                                  axis=0)
+                outputs["canSpeed"] = outputs["canSpeed"].cpu().detach().numpy()
+                target["canSpeed"] = target["canSpeed"].cpu().detach().numpy()
+                outputs["canSteering"] = outputs["canSteering"].cpu().detach().numpy()
+                target["canSteering"] = target["canSteering"].cpu().detach().numpy()
+                if normalize_targets:
+                    outputs["canSpeed"] = outputs["canSpeed"] * target_std["canSpeed"] + target_mean["canSpeed"]
+                    target["canSpeed"] = target["canSpeed"] * target_std["canSpeed"] + target_mean["canSpeed"]
+                    outputs["canSteering"] = outputs["canSteering"] * target_std["canSteering"] + target_mean[
+                        "canSteering"]
+                    target["canSteering"] = target["canSteering"] * target_std["canSteering"] + target_mean[
+                        "canSteering"]
 
-                if batch_idx >= 5:
+                # store predictions for calculating mse for entire epoch
+                val_pred_speed = np.concatenate((val_pred_speed, outputs["canSpeed"]), axis=0)
+                val_target_speed = np.concatenate((val_target_speed, target["canSpeed"]), axis=0)
+                val_pred_angle = np.concatenate((val_pred_angle, outputs["canSteering"]), axis=0)
+                val_target_angle = np.concatenate((val_target_angle, target["canSteering"]), axis=0)
+
+                if DEBUG and batch_idx >= DEBUG_BATCHES:
                     break
 
         val_speed_mse = ((val_target_speed - val_pred_speed) ** 2).mean()
         val_angle_mse = ((val_target_angle - val_pred_angle) ** 2).mean()
+        val_speed_mse_epochs = np.append(val_speed_mse_epochs, val_speed_mse)
+        val_angle_mse_epochs = np.append(val_angle_mse_epochs, val_angle_mse)
         print('Epoch: ' + str(epoch + 1) + '/' + str(num_epochs) + ' Val MSE Speed: ' + str(
             round(val_speed_mse, 3)) + " Val MSE Angle: " + str(round(val_angle_mse, 3)))
 
-        if best_speed_mse > val_speed_mse:
+        if not DEBUG and best_speed_mse > val_speed_mse:
             best_speed_mse = val_speed_mse
-            best_speed_model_wts = model.state_dict()
-            torch.save(model, TRAINED_MODELS_DIR + "temp.pt")
+            torch.save(model, TRAINED_MODELS_DIR + model_name + "_speed.pt")
 
-        if best_angle_mse > val_angle_mse:
+        if not DEBUG and best_angle_mse > val_angle_mse:
             best_angle_mse = val_angle_mse
-            best_angle_model_wts = model.state_dict()
-            torch.save(model, TRAINED_MODELS_DIR + "temp.pt")
+            torch.save(model, TRAINED_MODELS_DIR + model_name + "_angle.pt")
+
+    # epochs are done. Now save model details
+    def add_model_details():
+        def add_column(md, cn):
+            if cn not in md:
+                md[cn] = None
+
+        if os.path.isfile(TRAINED_MODELS_DETAILS_CSV):
+            model_details = pd.read_csv(TRAINED_MODELS_DETAILS_CSV)
+        else:
+            model_details = pd.DataFrame()
+
+        index = 0 if len(model_details) == 0 else model_details.index.max() + 1
+
+        add_column(model_details, "model_name")
+        model_details.loc[index, "model_name"] = model_name
+
+        add_column(model_details, "model_details")
+        model_details.loc[index, "model_details"] = "Angle does not take lstm output in this model." \
+                                                    "Other things are same"
+
+        add_column(model_details, "train_csv")
+        model_details.loc[index, "train_csv"] = config["data_loader"]["train"]["csv_name"]
+
+        add_column(model_details, "history_length")
+        model_details.loc[index, "history_length"] = config["data_loader"]["historic"]["number"]
+
+        add_column(model_details, "training_batch_size")
+        model_details.loc[index, "training_batch_size"] = config["data_loader"]["train"]["batch_size"]
+
+        add_column(model_details, "validation_batch_size")
+        model_details.loc[index, "validation_batch_size"] = config["data_loader"]["validation"]["batch_size"]
+
+        add_column(model_details, "shuffle")
+        model_details.loc[index, "shuffle"] = config["data_loader"]["train"]["shuffle"]
+
+        add_column(model_details, "train_transformations")
+        model_details.loc[index, "train_transformations"] = "ColorJitter with default parameters"
+
+        add_column(model_details, "validation_transformations")
+        model_details.loc[index, "validation_transformations"] = "None"
+
+        cn = "normalization_image"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = json.dumps(config["image"])
+
+        cn = "normalization_target"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = json.dumps(config["target"])
+
+        cn = "criterion"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = "SmoothL1Loss"
+
+        cn = "optimizer"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = "Adam, default params"
+
+        cn = "num_epochs"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = num_epochs
+
+        cn = "val_angle_mse_epochs"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = json.dumps(val_angle_mse_epochs.tolist())
+
+        cn = "val_speed_mse_epochs"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = json.dumps(val_speed_mse_epochs.tolist())
+
+        cn = "final_model_criteria"
+        add_column(model_details, cn)
+        model_details.loc[index, cn] = "Best validation MSE"
+
+        if not DEBUG:
+            model_details.to_csv(TRAINED_MODELS_DETAILS_CSV, index=False)
+
+    add_model_details()
 
 
 if __name__ == "__main__":
