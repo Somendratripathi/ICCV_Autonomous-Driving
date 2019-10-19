@@ -201,12 +201,16 @@ class Drive360(object):
                 cfR = TF.to_tensor(Image.open(self.data_dir + row['cameraRight']))
                 #To check for import torchvision.transforms.functional as TF TF.to_tensor(image)
 
-                foursq = cat([cat([cfL,cfF],2),cat([cfR,cfB],2)],1)
+                foursq = cat([cfF,cfR,cfB,cfL,cfF],2)
+                #cat([cat([cfL,cfF],2),cat([cfR,cfB],2)],1)
 
+                pilTrans = transforms.ToPILImage()
+                pilImg = pilTrans(foursq)
+                pilImg.save('outputabcd.png')
 
                 inputs['cameraFront'][row_idx] = (self.imageFront_transform(foursq))
     
-            #rint("Original shape {}, transformed 4sq {}".format(foursq.shape, cfF.shape))
+            #print("Original shape {}, transformed 4sq {}".format(foursq.shape, cfF.shape))
 
         #if self.right_left:
         #    inputs['cameraRight'],inputs['cameraLeft'] = {}, {}

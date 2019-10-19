@@ -8,7 +8,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import os
 import pickle
-from data_angle_regressor_4s_flattened import Drive360Loader
+from dataset4sq import Drive360Loader
 from utils import add_results
 if torch.cuda.is_available():
     print("Using GPU")
@@ -22,59 +22,47 @@ class SomeDrivingModel(nn.Module):
         final_concat_size = 0
 
         # Main CNN
-        
-        #count = 0 
-        #for child in cnn.children():
-        #    count+=1
-        #    if count < 45:
-        #        for param in child.parameters():
-        #            param.requires_grad = False
-#
-
         cnn = models.resnet34(pretrained=True)
         self.features = nn.Sequential(*list(cnn.children())[:-1])
         self.intermediate = nn.Sequential(nn.Linear(
-            cnn.fc.in_features, 128),
+            cnn.fc.in_features, 256),
             nn.ReLU())
-        final_concat_size += 128
+        final_concat_size += 256
 
         # Main LSTM
-        self.lstm = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=3,
+        self.lstm = nn.LSTM(input_size=256,
+                            hidden_size=128,
+                            num_layers=5,
                             batch_first=False)
-        final_concat_size += 64
+        final_concat_size += 128
 
         # Angle Regressor
         self.control_angle = nn.Sequential(
+            nn.Linear(final_concat_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
+        )
+        # Speed Regressor
+        self.control_speed = nn.Sequential(
             nn.Linear(final_concat_size, 64),
             nn.ReLU(),
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Linear(32, 1)
         )
-        # Speed Regressor
-        #self.control_speed = nn.Sequential(
-        #    nn.Linear(final_concat_size, 64),
-        #    nn.ReLU(),
-        #    nn.Linear(64, 32),
-        #    nn.ReLU(),
-        #    nn.Linear(32, 1)
-        #)
 
     def forward(self, data):
         module_outputs = []
         lstm_i = []
         # Loop through temporal sequence of
         # front facing camera images and pass 
-        # through the cnn. 
+        # through the cnn.
         for k, v in data['cameraFront'].items():
-
-            
             x = self.features(v.cuda())
             x = x.view(x.size(0), -1)
             x = self.intermediate(x)
-            # 
             lstm_i.append(x)
             # feed the current front facing camera
             # output directly into the 
@@ -92,8 +80,8 @@ class SomeDrivingModel(nn.Module):
 
         # Feed concatenated outputs into the 
         # regession networks.
-        prediction = {'canSteering': torch.squeeze(self.control_angle(x)),
-                      'canSpeed': torch.squeeze(self.control_angle(x))}
+        prediction = {'canSteering': torch.squeeze(self.control_angle(x_cat)),
+                      'canSpeed': torch.squeeze(self.control_speed(x_cat))}
         return prediction
 
 
@@ -103,8 +91,8 @@ class SomeDrivingModel(nn.Module):
 
 
 if __name__ == "__main__":
-    #config = json.load(open(os.path.join(os.getcwd(),'drive/My Drive/L2D','autonomous_driving/config.json')))
-    config = json.load(open(os.path.join(os.getcwd(),'autonomous_driving/config.json')))
+    config = json.load(open(os.path.join(os.getcwd(),'drive/My Drive/L2D','autonomous_driving/config.json')))
+    #config = json.load(open(os.path.join(os.getcwd(),'autonomous_driving/config.json')))
 
     train_loader = Drive360Loader(config, 'train')
     validation_loader = Drive360Loader(config, 'validation')
@@ -122,6 +110,9 @@ if __name__ == "__main__":
 
     def denorm(array, mean, std):
         return array * std + mean 
+
+
+
 
 
 
@@ -147,11 +138,10 @@ if __name__ == "__main__":
                 hist_train_loss_s.append(loss_speed.cpu().detach().numpy())
                 hist_train_loss_a.append(loss_angle.cpu().detach().numpy())
 
-                loss = loss_angle #+ loss_speed 
+                loss = loss_speed + loss_angle
                 loss.backward()
                 optimizer.step()
-                if batch_idx > 50:
-                    break
+
 
            
             val_pred_speed = [] #np.array((2,))
@@ -169,8 +159,7 @@ if __name__ == "__main__":
                     val_target_speed.extend(target["canSpeed"].cpu().detach().numpy())
                     val_pred_angle.extend(outputs["canSteering"].cpu().detach().numpy())
                     val_target_angle.extend(target["canSteering"].cpu().detach().numpy())
-                    if batch_idx>500:
-                        break
+
 
             #calculate batch MSE
             val_speed_mse = ((denorm(np.array(val_target_speed),speed_mean,speed_std) - denorm(np.array(val_pred_speed),speed_mean,speed_std)) ** 2).mean()
@@ -181,21 +170,21 @@ if __name__ == "__main__":
             hist_val_acc_a.append(val_angle_mse)
             
             #print val batch MSE
-            print('Epoch: ' + str(epoch+1) + '/' + str(epochs) + '\n Val Angle MSE: {}'.format(str(round(val_angle_mse,3))))
+            print('Epoch: ' + str(epoch+1) + '/' + str(epochs) + '\n Val Speed MSE: {0} \n Val Angle MSE: {1}'.format(str(round(val_speed_mse,3)),str(round(val_angle_mse,3))))
 
-        torch.save(model, "angle_reg_flattened_.pt")
+        torch.save(model, "Foursq.pt")
         return (hist_train_loss_s, hist_train_loss_a, hist_val_acc_s, hist_val_acc_a)
 
 
 
     # optimizer
 
-    adm_optimizer = optim.Adam(model.parameters(),lr=0.001, betas=(0.9, 0.999)) #optim.SGD(model.parameters(), lr)
+    adm_optimizer = optim.Adamax(model.parameters(),lr=0.002, betas=(0.8, 0.8)) #optim.SGD(model.parameters(), lr)
     criterion = nn.MSELoss().cuda()
 
     run1 = train_nn(train_loader, validation_loader, model, adm_optimizer, criterion)
     
     
     #model output
-    pickle.dump(run1,open("model_angle_regressor_flattened_4sq","wb"))
+    pickle.dump(run1,open("model_4sq","wb"))
 
