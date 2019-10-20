@@ -7,6 +7,7 @@ import pandas as pd
 import torch.optim as optim
 from datetime import datetime
 import os
+from tqdm import tqdm
 
 from autonomous_driving.dataset import Drive360Loader
 from autonomous_driving.utils import add_results, get_device
@@ -27,8 +28,8 @@ def main():
 
     criterion = nn.SmoothL1Loss()
     optimizer = optim.Adam(model.parameters())
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10)
-    num_epochs = 20 if not DEBUG else DEBUG_EPOCHS
+    scheduler = None # optim.lr_scheduler.StepLR(optimizer, step_size=10)
+    num_epochs = 10 if not DEBUG else DEBUG_EPOCHS
 
     normalize_targets = config['target']['normalize']
     target_mean = config['target']['mean']
@@ -72,7 +73,7 @@ def main():
         val_pred_angle = np.empty((0,))
         val_target_angle = np.empty((0,))
         with torch.no_grad():
-            for batch_idx, (data, target, _) in enumerate(validation_loader):
+            for batch_idx, (data, target, _) in enumerate(tqdm(validation_loader)):
                 # transfer stuff to GPU
                 data, target = validation_loader.load_batch_to_device(data, target, device)
                 # get predictions
@@ -131,8 +132,11 @@ def main():
         model_details.loc[index, "model_name"] = model_name
 
         add_column(model_details, "model_details")
-        model_details.loc[index, "model_details"] = "Angle does not take lstm output in this model." \
-                                                    "Other things are same"
+        model_details.loc[index, "model_details"] = "Baseline course staff model." \
+                                                    "Feature extractor is resnet34."\
+                                                    "Clipped and Smoothed angle across chapter"\
+                                                    "Angle does not take lstm output in this model." \
+                                                    "Trained sample2 on sample2 images."
 
         add_column(model_details, "train_csv")
         model_details.loc[index, "train_csv"] = config["data_loader"]["train"]["csv_name"]
@@ -150,7 +154,7 @@ def main():
         model_details.loc[index, "shuffle"] = config["data_loader"]["train"]["shuffle"]
 
         add_column(model_details, "train_transformations")
-        model_details.loc[index, "train_transformations"] = "ColorJitter with default parameters"
+        model_details.loc[index, "train_transformations"] = "None"
 
         add_column(model_details, "validation_transformations")
         model_details.loc[index, "validation_transformations"] = "None"

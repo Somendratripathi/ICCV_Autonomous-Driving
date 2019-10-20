@@ -1,6 +1,7 @@
 from torchvision import models
 import torch.nn as nn
 import torch
+from efficientnet_pytorch import EfficientNet
 
 from autonomous_driving.dataset import Drive360Loader
 from autonomous_driving.utils import add_results, get_device
@@ -19,18 +20,23 @@ class SomeDrivingModel(nn.Module):
         final_concat_size = 0
 
         # Main CNN
-        cnn = models.resnet34(pretrained=True)
+        # cnn = models.resnet34(pretrained=True)
+        cnn = EfficientNet.from_pretrained("efficientnet-b5")
         self.features = nn.Sequential(*list(cnn.children())[:-1])
-        self.intermediate = nn.Sequential(nn.Linear(
-            cnn.fc.in_features, 128),
-            nn.ReLU())
+        self.intermediate = nn.Sequential(
+            nn.Linear(cnn._fc.in_features, 128),
+            nn.ReLU()
+        )
         final_concat_size += 128
 
         # Main LSTM
-        self.lstm = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=3,
-                            batch_first=False)
+        self.lstm = nn.LSTM(
+            input_size=128,
+            hidden_size=64,
+            # num_layers=3,
+            num_layers=5,
+            batch_first=False
+        )
         final_concat_size += 64
 
         # Angle Regressor
@@ -77,8 +83,10 @@ class SomeDrivingModel(nn.Module):
 
         # Feed concatenated outputs into the
         # regression networks.
-        prediction = {'canSteering': torch.squeeze(self.control_angle(x_cat)),
-                      'canSpeed': torch.squeeze(self.control_speed(x_cat))}
+        prediction = {
+            'canSteering': torch.squeeze(self.control_angle(x_cat)),
+            'canSpeed': torch.squeeze(self.control_speed(x_cat))
+        }
         return prediction
 
 
@@ -87,7 +95,6 @@ class BasicDrivingModel(nn.Module):
     A rip off SomeDrivingModel
     - Only difference is that
     """
-
     def __init__(self, device=get_device()):
         super(BasicDrivingModel, self).__init__()
 
@@ -95,7 +102,15 @@ class BasicDrivingModel(nn.Module):
         final_concat_size = 0
 
         # Main CNN
+        # cnn = EfficientNet.from_pretrained("efficientnet-b0").to(device)
+        # self.features = cnn.extract_features
+        # self.intermediate = nn.Sequential(
+        #     nn.Linear(cnn._fc.in_features*50, 128),
+        #     nn.ReLU()
+        # )
         cnn = models.resnet34(pretrained=True)
+        # for parameters in cnn.parameters():  # We don't want to train feature extracter
+        #     parameters.requires_grad = False
         self.features = nn.Sequential(*list(cnn.children())[:-1])
         self.intermediate = nn.Sequential(nn.Linear(
             cnn.fc.in_features, 128),
@@ -103,10 +118,12 @@ class BasicDrivingModel(nn.Module):
         final_concat_size += 128
 
         # Main LSTM
-        self.lstm = nn.LSTM(input_size=128,
-                            hidden_size=64,
-                            num_layers=3,
-                            batch_first=False)
+        self.lstm = nn.LSTM(
+            input_size=128,
+            hidden_size=64,
+            num_layers=3,
+            batch_first=False
+        )
         final_concat_size += 64
 
         # Angle Regressor
@@ -157,5 +174,3 @@ class BasicDrivingModel(nn.Module):
         prediction = {'canSteering': torch.squeeze(self.control_angle(module_outputs[0])),
                       'canSpeed': torch.squeeze(self.control_speed(x_cat))}
         return prediction
-
-

@@ -40,11 +40,17 @@ if __name__ == "__main__":
             # if batch_idx >= 5:
             #     break
 
+    print("results: ", len(results))
+    print("test_file: ", len(test_loader.drive360))
     # Assuming sampled_predictions_file only has columns ["chapter", "frameIndex", "canSteering", "canSpeed"]
     # Also frame index is integer
     sampled_predictions = pd.DataFrame.from_dict(results)
-    sampled_predictions.chapter = pd.to_numeric(sampled_predictions.chapter)
-    sampled_predictions.frameIndex = pd.to_numeric(sampled_predictions.frameIndex)
+    sampled_predictions.loc[:, "chapter"] = sampled_predictions.apply(lambda s: int(s.loc["chapter"]), axis=1)
+    sampled_predictions.loc[:, "frameIndex"] = sampled_predictions.apply(lambda s: int(s.loc["frameIndex"]), axis=1)
+    # sampled_predictions.chapter = pd.to_numeric(sampled_predictions.chapter)
+    # sampled_predictions.frameIndex = pd.to_numeric(sampled_predictions.frameIndex)
+
+    # sampled_predictions.to_csv(SUBMISSIONS_DIR + "test_sample1.csv")
 
     test_full = pd.read_csv(DATA_DIR + "test_full.csv", usecols=["chapter", "cameraFront"])
 

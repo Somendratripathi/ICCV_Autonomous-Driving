@@ -7,6 +7,7 @@ import torch
 from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.utils.data import Sampler
+from scipy.signal import butter, filtfilt
 
 
 class SubsetSampler(Sampler):
@@ -51,14 +52,20 @@ class Drive360Loader(DataLoader):
 
 
 class Drive360(object):
-    ## takes a config json object that specifies training parameters and a
-    ## phase (string) to specifiy either 'train', 'test', 'validation'
+    """
+    takes a config json object that specifies training parameters and a
+    phase (string) to specifiy either 'train', 'test', 'validation'
+    """
+
     def __init__(self, config, phase):
         self.config = config
         self.data_dir = config['data_loader']['data_dir']
         self.csv_name = config['data_loader'][phase]['csv_name']
         self.shuffle = config['data_loader'][phase]['shuffle']
         self.history_number = config['data_loader']['historic']['number']
+        self.history_frequency = config['data_loader']['historic'][
+            'frequency']  # This number represents frames to leave between two consecutive frames + 1
+        self._is_sample_file = config["data_loader"][phase]["is_sample_file"]
         self.normalize_targets = config['target']['normalize']
         self.target_mean = {}
         target_mean = config['target']['mean']
@@ -89,6 +96,26 @@ class Drive360(object):
             axis=1
         )
 
+        if phase == "train":
+            # Clip and Smooth the canSteering column
+            self.dataframe["canSteering"].clip(lower=-180, upper=180, inplace=True)
+
+            b, a = butter(5, 0.45)
+            for chapter in self.dataframe.chapter.unique():
+                try:
+                    filtered = filtfilt(
+                        b, a,
+                        self.dataframe.loc[self.dataframe.chapter == chapter, "canSteering"]
+                    )
+                except Exception as e:
+                    filtered = self.dataframe.loc[self.dataframe.chapter == chapter, "canSteering"]
+                    print(
+                        "smoothing failed for chapter ", chapter, " of length ",
+                        len(self.dataframe.loc[self.dataframe.chapter == chapter])
+                    )
+
+                self.dataframe.loc[self.dataframe.chapter == chapter, "canSteering"] = filtered
+
         # Here we calculate the temporal offset for the starting indices of each chapter. As we cannot cross chapter
         # boundaries but would still like to obtain a temporal sequence of images, we cannot start at index 0 of each chapter
         # but rather at some index i such that the i-max_temporal_history = 0
@@ -107,7 +134,13 @@ class Drive360(object):
         # Thus the fifth sample will consist of images:     [-****]
         # Thus the sixth sample will consist of images:     [*****]
 
-        self.indices = self.dataframe.groupby('chapter').apply(lambda x: x.iloc[self.history_number:]).index.droplevel(
+        if self._is_sample_file:
+            self.sequence_length = self.history_number
+        else:
+            self.sequence_length = self.history_number * self.history_frequency
+
+        self.indices = self.dataframe.groupby('chapter').apply(
+            lambda x: x.iloc[self.sequence_length:]).index.droplevel(
             level=0).tolist()
 
         #### phase specific manipulation #####
@@ -155,7 +188,7 @@ class Drive360(object):
 
         front_transforms = {
             'train': transforms.Compose([
-                transforms.ColorJitter(),
+                # transforms.ColorJitter(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=config['image']['norm']['mean'],
                                      std=config['image']['norm']['std'])
@@ -166,6 +199,7 @@ class Drive360(object):
                                      std=config['image']['norm']['std'])
             ]),
             'test': transforms.Compose([
+                transforms.Resize((320, 180)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=config['image']['norm']['mean'],
                                      std=config['image']['norm']['std'])
@@ -198,12 +232,17 @@ class Drive360(object):
         inputs = {}
         labels = {}
         id = {}
-        # end = index - self.sequence_length
-        # skip = int(-1 * self.history_frequency)
+        if self._is_sample_file:
+            # For sample files, the sequences are already skipped
+            end = index - self.history_number
+            skip = -1
+        else:
+            end = index - self.sequence_length
+            skip = int(-1 * self.history_frequency)
 
-        # For sample files, the sequences are already skipped
-        end = index - self.history_number
-        skip = -1
+        end = max(end, 0)
+
+        # print("fetching row for i, e, s =", index, end, skip)
         rows = self.dataframe.iloc[index:end:skip].reset_index(drop=True, inplace=False)
 
         if self.front:
@@ -227,6 +266,7 @@ class Drive360(object):
 
 if __name__ == "__main__":
     import json
+
     config = json.load(open("./config.json"))
     td = Drive360(config, "test")
     print(len(td))

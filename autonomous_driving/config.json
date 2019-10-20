@@ -1,56 +1,63 @@
 {
-    "cuda": {
-        "use": true
+  "cuda": {
+    "use": true
+  },
+  "front": true,
+  "multi_camera": {
+    "right_left": false,
+    "rear": false
+  },
+  "data_loader": {
+    "historic": {
+      "number": 3,
+      "frequency": 2
     },
-    "front": true,
-    "multi_camera": {
-        "right_left": false,
-        "rear": false
+    "data_dir": "/home/resl/Dev/iccv_autonomous_driving/data/Sample1/",
+    "train": {
+      "csv_name": "train_sample2.csv",
+      "batch_size": 32,
+      "shuffle": true,
+      "num_workers": 8,
+      "is_sample_file": true
     },
-    "data_loader": {
-        "historic":{
-            "number": 2,
-            "frequency": 4
-        },
-        "data_dir": "/home/resl/Dev/iccv_autonomous_driving/data/Sample3/",
-        "train":{
-            "csv_name": "train_sample3.csv",
-            "batch_size": 2,
-            "shuffle": true,
-            "num_workers": 1
-        },
-        "validation": {
-            "csv_name": "val_sample3.csv",
-            "batch_size": 2,
-            "shuffle": true,
-            "num_workers": 1
-        },
-        "test": {
-            "csv_name": "test_sample3.csv",
-            "batch_size": 2,
-            "shuffle": false,
-            "num_workers": 1
-        }
+    "validation": {
+      "csv_name": "val_sample2.csv",
+      "batch_size": 32,
+      "shuffle": true,
+      "num_workers": 8,
+      "is_sample_file": true
     },
-    "target":{
-        "normalize": true,
-        "mean": {"canSteering": -5.406788214535221,
-                "canSpeed": 13.426163367846936},
-        "std": {"canSteering": 73.41232589456718,
-                "canSpeed": 7.8257638553586455}
-    },
-    "image": {
-        "norm": {
-            "mean": [
-                0.4443069311879691,
-                0.44355877047930287,
-                0.44472938612018881
-            ],
-            "std": [
-                0.084803636530148815,
-                0.084356488922100445,
-                0.086008411332264681
-            ]
-        }
+    "test": {
+      "csv_name": "test_sample1.csv",
+      "batch_size": 32,
+      "shuffle": false,
+      "num_workers": 5,
+      "is_sample_file": false
     }
+  },
+  "target": {
+    "normalize": true,
+    "mean": {
+      "canSteering": -5.406788214535221,
+      "canSpeed": 13.426163367846936
+    },
+    "std": {
+      "canSteering": 73.41232589456718,
+      "canSpeed": 7.8257638553586455
+    }
+  },
+  "image": {
+    "norm": {
+      "mean": [
+        0.4443069311879691,
+        0.44355877047930287,
+        0.44472938612018881
+      ],
+      "std": [
+        0.084803636530148815,
+        0.084356488922100445,
+        0.086008411332264681
+      ]
+    }
+  }
 }
