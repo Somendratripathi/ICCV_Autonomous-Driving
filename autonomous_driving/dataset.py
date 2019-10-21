@@ -1,5 +1,5 @@
 import os
-from PIL import Image
+from PIL import Image, ImageOps
 import pandas as pd
 import numpy as np
 from random import shuffle
@@ -8,6 +8,7 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from torch.utils.data import Sampler
 from scipy.signal import butter, filtfilt
+from random import random
 
 
 class SubsetSampler(Sampler):
@@ -66,6 +67,9 @@ class Drive360(object):
         self.history_frequency = config['data_loader']['historic'][
             'frequency']  # This number represents frames to leave between two consecutive frames + 1
         self._is_sample_file = config["data_loader"][phase]["is_sample_file"]
+
+        self._use_random_hflip = config["data_loader"][phase]["use_random_hflip"]
+
         self.normalize_targets = config['target']['normalize']
         self.target_mean = {}
         target_mean = config['target']['mean']
@@ -199,7 +203,7 @@ class Drive360(object):
                                      std=config['image']['norm']['std'])
             ]),
             'test': transforms.Compose([
-                transforms.Resize((320, 180)),
+                transforms.Resize((160, 90)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=config['image']['norm']['mean'],
                                      std=config['image']['norm']['std'])
@@ -245,18 +249,30 @@ class Drive360(object):
         # print("fetching row for i, e, s =", index, end, skip)
         rows = self.dataframe.iloc[index:end:skip].reset_index(drop=True, inplace=False)
 
+        # If angle is > 20 degrees and self.use_random_hflip, randomly flip all the seq images and angle
+        if self._use_random_hflip and abs(rows.loc[0, "canSteering"]) >= 20:
+            do_hflip = (random() >= 0.5)
+        else:
+            do_hflip = False
+
         if self.front:
             inputs['cameraFront'] = {}
             for row_idx, (_, row) in enumerate(rows.iterrows()):
-                inputs['cameraFront'][row_idx] = (
-                    self.imageFront_transform(Image.open(self.data_dir + row['cameraFront'])))
+                img = Image.open(self.data_dir + row['cameraFront'])
+                if do_hflip:
+                    img = ImageOps.mirror(img)
+                inputs['cameraFront'][row_idx] = self.imageFront_transform(img)
+
         if self.right_left:
             inputs['cameraRight'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRight'].iloc[0]))
             inputs['cameraLeft'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraLeft'].iloc[0]))
         if self.rear:
             inputs['cameraRear'] = self.imageSides_transform(Image.open(self.data_dir + rows['cameraRear'].iloc[0]))
+
         labels['canSteering'] = self.dataframe['canSteering'].iloc[index]
         labels['canSpeed'] = self.dataframe['canSpeed'].iloc[index]
+        if do_hflip:
+            labels["canSteering"] = -1*labels["canSteering"]
 
         id["chapter"] = self.dataframe["chapter"].iloc[index]
         id["frameIndex"] = self.dataframe["frameIndex"].iloc[index]

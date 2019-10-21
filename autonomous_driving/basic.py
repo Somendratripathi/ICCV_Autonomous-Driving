@@ -23,13 +23,13 @@ def main():
     train_loader = Drive360Loader(config, 'train')
     validation_loader = Drive360Loader(config, 'validation')
 
-    model = BasicDrivingModel()
+    model = BatchNormDrivingModel()
     model = model.to(device)
 
     criterion = nn.SmoothL1Loss()
     optimizer = optim.Adam(model.parameters())
-    scheduler = None # optim.lr_scheduler.StepLR(optimizer, step_size=10)
-    num_epochs = 10 if not DEBUG else DEBUG_EPOCHS
+    scheduler = None  # optim.lr_scheduler.StepLR(optimizer, step_size=10)
+    num_epochs = 5 if not DEBUG else DEBUG_EPOCHS
 
     normalize_targets = config['target']['normalize']
     target_mean = config['target']['mean']
@@ -47,7 +47,7 @@ def main():
         # TRAIN EPOCH
         ###############
         model.train()
-        for batch_idx, (data, target, _) in enumerate(train_loader):
+        for batch_idx, (data, target, _) in enumerate(tqdm(train_loader)):
             # transfer stuff to device
             data, target = train_loader.load_batch_to_device(data, target, device)
 
@@ -132,11 +132,15 @@ def main():
         model_details.loc[index, "model_name"] = model_name
 
         add_column(model_details, "model_details")
-        model_details.loc[index, "model_details"] = "Baseline course staff model." \
-                                                    "Feature extractor is resnet34."\
-                                                    "Clipped and Smoothed angle across chapter"\
-                                                    "Angle does not take lstm output in this model." \
-                                                    "Trained sample2 on sample2 images."
+        model_details.loc[index, "model_details"] = """
+            BatchNorm Model(feature extractor layer and regressor layers now has batchnorms)
+            Feature extractor is resnet34.Clipped and Smoothed angle across chapter
+            lstm layer has 1 layer.Also increased hidden layer size from 64 to 128
+            Note: Angle is taking lstm output in this model.Using random horizontal flips
+            for improving turns(fingers crossed)
+            Trained sample2 on sample2 images.
+        """
+
 
         add_column(model_details, "train_csv")
         model_details.loc[index, "train_csv"] = config["data_loader"]["train"]["csv_name"]
